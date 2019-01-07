@@ -1,12 +1,38 @@
-  /*
-  Since there is a year of CDR data, we need at least 20 calls and at maximum 5000.
-  This is based on the distributions.
-  */
-  create table ligadores_significativos as
-  select ID
-  from (
-      select count(*) as count, ID
-      from CDR
-      group by ID) as s0
-  where count > 20 and count < 5000;
+/* Filter to avoid shared cellphones or companies.
+Since there is a year of CDR data, we need at least 20 calls and at maximum 5000.
+This is based on the distributions.
+*/
+create table HUMAN_CALLERS as
+select ID
+from (
+    select count(*) as count, ID
+    from CDR
+    group by ID) as s0
+where count > 20 and count < 5000;
+ 
+/* Get staying places.
+The SQL bellow gives the last position of the caller after 7pm on workdays and any time on weekends and holidays.
+*/
+
+CREATE TABLE LAST_POSITION_PER_DAY
+AS
+     SELECT a.ddd_orig || a.ID1 AS COD,
+            dt_ini_atividade_rede AS dia,
+            MAX (hr_ini_atividade_rede) AS MAX_HORA,
+            PLACE
+       FROM CDR a  -- joining lat/long with the places names
+            INNER JOIN julio.LAT_LONG_LOCAL b
+               ON a.longitude = b.longitude AND a.latitude = b.latitude
+      WHERE    -- any time on holidays
+               dt_ini_atividade_rede IN (SELECT dia
+                                           FROM HOLIDAYS)
+            OR                                    -- any time on sundays
+              EXTRACT (dow FROM dt_ini_atividade_rede) = 7
+            OR                      -- between 7pm and 6am on workdays
+               (   EXTRACT (HOUR FROM hr_ini_atividade_rede) > 19
+                OR EXTRACT (HOUR FROM hr_ini_atividade_rede) < 6)
+   GROUP BY a.id1,
+            a.ddd_orig,
+            dt_ini_atividade_rede,
+            PLACE;
   
