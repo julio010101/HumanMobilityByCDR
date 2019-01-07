@@ -1,0 +1,12 @@
+  /*
+  Since there is a year of CDR data, we need at least 20 calls and at maximum 5000.
+  This is based on the distributions.
+  */
+  create table ligadores_significativos as
+  select ID
+  from (
+      select count(*) as count, ID
+      from CDR
+      group by ID) as s0
+  where count > 20 and count < 5000;
+  
