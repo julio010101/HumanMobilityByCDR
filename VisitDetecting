@@ -70,9 +70,14 @@ GROUP BY local_residencia, destino
 ORDER BY local_residencia, count(distinct id) desc, destino;
 commit;
 
+
+A instrução acima detectou a presença de usuários apenas em um dia e um turno. 
+Para obter o resultado dos 365 dias em 4 turnos, foi usado um script de automatização AWK, 
+de forma que as 365x4-1 instruções foram geradas de forma automatizada.
+
+
 As próximas instruções formataram os resultados.
 
-\begin{verbatim}
 --
 -- Objetivo : Obter V(l,dia,t)
 -- visitas ao destino d por dia, sob o turno t
