@@ -1,1 +1,106 @@
-
+insert into julio.deslocamentos_dia_k
+SELECT '2014-01-01' AS dia,
+      origem,
+      destino,
+      sum(deslocamentos_k) as deslocamentos_k
+FROM (
+SELECT 
+       origem,
+       destino,
+       Count(*) * k as deslocamentos_k
+FROM   (SELECT id,
+               datahora,
+               salto,
+			   k,
+               origem,
+               destino,
+               ocoord,
+               dcoord,
+               minsbetween
+        FROM   (SELECT id,
+                       datahora,
+                       salto,
+					   k,
+                       origem,
+                       destino,
+                       ocoord,
+                       dcoord,
+                       Round(Distance(Cast(Substr(ocoord, 0, Instr(ocoord, ','))
+                                           AS
+                                           FLOAT), Cast
+                             (
+                                   Substr(ocoord, Instr(ocoord, ',') + 1,
+                                   Length(ocoord))AS
+                                   FLOAT),
+                             Cast(
+                                   Substr(dcoord, 0, Instr(dcoord, ','))AS FLOAT
+                             ), Cast
+                             (
+                                   Substr(dcoord, Instr(dcoord, ',') + 1,
+                                   Length(dcoord))AS
+                                   FLOAT)), 3)
+                                                    AS km_distance,
+                       Datediff(mi, hora, nexthour) AS minsbetween
+                FROM   (SELECT id,
+                               datahora,
+                               salto,
+							   k,
+                               hora,
+                               Lead(hora, 1)
+                                 OVER (
+                                   partition BY id
+                                   ORDER BY datahora) AS nexthour,
+                               local                  AS Origem,
+                               Lead(local, 1)
+                                 OVER (
+                                   partition BY id
+                                   ORDER BY datahora) AS Destino,
+                               coord                  AS OCoord,
+                               Lead(coord, 1)
+                                 OVER (
+                                   partition BY id
+                                   ORDER BY datahora) AS DCoord
+                        FROM   (SELECT ddd_orig
+                                       || id1                   AS id,
+                                       Upper(b.nm_grao)         AS local,
+                                       c.k                      AS k,
+                                       b.latitude
+                                       || ','
+                                       || b.longitude           AS coord,
+                                       dt_ini_atividade_rede
+                                       || '_'
+                                       || hr_ini_atividade_rede AS datahora,
+                                       hr_ini_atividade_rede    AS hora,
+                                       Conditional_change_event(b.latitude
+                                                                || ','
+                                                                || b.longitude)
+                                         OVER (
+                                           partition BY ddd_orig||id1
+                                           ORDER BY ddd_orig||id1,
+                                         dt_ini_atividade_rede||'_'||
+                                         hr_ini_atividade_rede)
+                                                                AS salto
+                                FROM   bill_quando_onde_j a
+                                       INNER JOIN julio.lat_long_local b
+                                               ON a.longitude = b.longitude
+                                                  AND a.latitude = b.latitude
+                                       LEFT OUTER JOIN julio.residencia_presumida r
+                                               ON r.cod = a.ddd_orig||a.id1
+                                       INNER JOIN julio.local_pop_usu c
+                                               ON c.nm_grao = r.nm_grao
+                                WHERE  dt_ini_atividade_rede = '2014-01-01'
+                                ORDER  BY ddd_orig
+                                          || id1,
+                                          salto,
+                                          dt_ini_atividade_rede
+                                          || '_'
+                                          || hr_ini_atividade_rede,
+                                          b.nm_grao) AS salto)AS grouped)AS
+               grouped2
+        WHERE  ocoord != dcoord
+               AND km_distance > 2
+               AND minsbetween > 30
+               AND minsbetween < 240) AS grouped3
+GROUP  BY origem,
+          destino, k) as LAST
+GROUP BY origem, destino;
