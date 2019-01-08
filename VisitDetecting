@@ -1,1 +1,120 @@
+-- Objetivo : Detectar presença de usuários de l no destino d
+--
 
+create table julio.visitas_de_l_sob_turnos (
+dia date not null,
+turno varchar(30) not null,
+local_residencia varchar(55) not null,
+destino varchar(55) not null,
+usuários int not null)
+order by dia, turno, local_residencia, destino
+PARTITION BY dia;
+
+insert into julio.visitas_de_l_sob_turnos
+SELECT '2014-01-01' as dia, 'Turno 1:4h-10h' as turno,
+local_residencia, destino, count(distinct id) as usuarios
+FROM
+   (--trazer apenas rank=1
+   SELECT id, local_residencia, destino, distancia_metros, count_visitas, rank
+   FROM (
+      SELECT ddd_orig
+	 || id1                   AS id,
+	 upper(r.nm_grao)         AS local_residencia,
+	 Upper(b.nm_grao)         AS destino,
+	 d.meters		  AS distancia_metros,
+	 count(*) as count_visitas,
+	 dense_rank() over (partition by ddd_orig||id1 order by count(*) desc) as rank  
+      FROM   bill_quando_onde_j a
+	 INNER JOIN julio.lat_long_local b
+	 ON a.longitude = b.longitude
+	 AND a.latitude = b.latitude
+	 INNER JOIN julio.residencia_presumida r
+	 ON r.cod = a.ddd_orig||a.id1
+	 INNER JOIN eventos.alpha_gmaps_distance d
+	 ON r.nm_grao = d.o_local
+	 AND b.nm_grao = d.d_local
+      WHERE  dt_ini_atividade_rede = '2014-01-01'
+	 and hr_ini_atividade_rede between '04:00:00' and '09:59:59' --turno1
+      GROUP BY ddd_orig,id1,r.nm_grao,b.nm_grao,d.meters
+    ) as s0
+    WHERE rank=1
+      AND (id, local_residencia, distancia_metros, count_visitas, rank) IN
+          ( --caso id tenha mais de um rank=1, vale o max(distancia)--
+	  SELECT id, local_residencia, max(distancia_metros), count_visitas, rank
+	  FROM (
+	     SELECT ddd_orig
+		|| id1                   AS id,
+		upper(r.nm_grao)         AS local_residencia,
+		Upper(b.nm_grao)         AS destino,
+		d.meters		  AS distancia_metros,
+		count(*) as count_visitas,
+		dense_rank() over (partition by ddd_orig||id1 order by count(*) desc) as rank  
+	     FROM   bill_quando_onde_j a
+		INNER JOIN julio.lat_long_local b
+		ON a.longitude = b.longitude
+		AND a.latitude = b.latitude
+		INNER JOIN julio.residencia_presumida r
+		ON r.cod = a.ddd_orig||a.id1
+		INNER JOIN eventos.alpha_gmaps_distance d
+		ON r.nm_grao = d.o_local
+		AND b.nm_grao = d.d_local
+	     WHERE  dt_ini_atividade_rede = '2014-01-01'
+		and hr_ini_atividade_rede between '04:00:00' and '09:59:59' --turno1
+	     GROUP BY ddd_orig,id1,r.nm_grao,b.nm_grao,d.meters
+	   ) as s0
+	   WHERE rank=1
+	   GROUP BY id, local_residencia, count_visitas, rank
+	  )
+   ) as s1
+GROUP BY local_residencia, destino
+ORDER BY local_residencia, count(distinct id) desc, destino;
+commit;
+
+As próximas instruções formataram os resultados.
+
+\begin{verbatim}
+--
+-- Objetivo : Obter V(l,dia,t)
+-- visitas ao destino d por dia, sob o turno t
+
+create table julio.visitas_de_l_sum_turnos (
+dia date not null,
+turno varchar(30) not null,
+local_residencia varchar(55) not null,
+sum_visitas int not null)
+order by dia, turno, local_residencia
+PARTITION BY dia;
+
+insert into  julio.visitas_de_l_sum_turnos
+select dia, turno, local_residencia, sum(visitas) as sum_visitas 
+from julio.visitas_de_l_sob_turnos
+group by  dia, turno, local_residencia
+order by  dia, turno, local_residencia;
+
+
+-- Agora preciso fazer:
+-- (V(l,d,dia,t)/V(l,dia,t)) * pop(l)
+
+drop table julio.visitas_expan_sob_turnos;
+
+create table julio.visitas_expan_sob_turnos as
+SELECT
+   b.dia, b.turno, b.local_residencia, b.destino, a.pop_censo,
+   visitas, sum_visitas as sum_visitas_de_l,
+   ceil((visitas/sum_visitas)*a.pop_censo) as vis_c_fator_expa
+FROM
+   julio.local_pop_usu a inner join 
+   julio.visitas_de_l_sob_turnos b on a.nm_grao = b.local_residencia
+      inner join
+   julio.visitas_de_l_sum_turnos c on c.dia = b.dia and
+      c.turno = b.turno and c.local_residencia = b.local_residencia;
+
+-- conferindo e a soma dos visitantes residentes de l fecha com
+-- o censo
+
+select
+   dia, turno, local_residencia, pop_censo, sum(vis_c_fator_expa)
+from
+   julio.visitas_expan_sob_turnos
+group by
+   dia, turno, local_residencia, pop_censo;
