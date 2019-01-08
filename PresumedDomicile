@@ -13,7 +13,6 @@ where count > 20 and count < 5000;
 /* Get staying places.
 The SQL bellow gives the last position of the caller after 7pm on workdays and any time on weekends and holidays.
 */
-
 CREATE TABLE LAST_POSITION_PER_DAY
 AS
      SELECT a.ddd_orig || a.ID1 AS COD,
@@ -35,4 +34,59 @@ AS
             a.ddd_orig,
             dt_ini_atividade_rede,
             PLACE;
+
+/* Total calls per caller
+   To be used at the end.
+*/
+CREATE table TOTAL_CALLS_PER_CALLER as 
+SELECT ddd_orig, ID1,
+         count(*) as total_ligacoes
+FROM CDR
+GROUP BY  ddd_orig, ID1
+order by ddd_orig, id1;
+
+/* Number of day with a detected locatio per user.
+   To be used at the end.
+*/
+CREATE TABLE SUM_DAYS_PER_USER
+AS
+   SELECT COD, SUM (n_dias) AS cont_ligacoes_candidatas
+     FROM (  SELECT COD,
+                    PLACE,
+                    COUNT (DIA) AS n_dias
+               FROM LAST_POSITION_PER_DAY
+           GROUP BY COD, PLACE)
+          AS ultima_posicao
+GROUP BY COD
+order by COD, cont_ligacoes_candidatas;
+
+/* The presumed domicile per user.
+*/
+CREATE TABLE PRESUMED_DOMICILE
+AS
+   WITH residencia_presumida_bruta
+        AS (SELECT COD, PLACE, MAX (n_dias) AS number_of_days
+              FROM ( 
+                    SELECT   COD, PLACE, COUNT (DIA) AS n_dias
+                        FROM LAST_POSITION_PER_DAY
+                    GROUP BY COD, PLACE)
+                   AS LAST_POSITION
+group by COD, PLACE)
+
+select COD, PLACE, number_of_days, cont_ligacoes_candidatas, total_ligacoes
+FROM
+(
+SELECT T1.COD,
+       T1.NM_GRAO,
+       T1.conta_dias,
+       T2.cont_ligacoes_candidatas,
+       T3.total_ligacoes
+FROM residencia_presumida_bruta T1
+INNER JOIN SUM_DAYS_PER_USER T2 ON T2.COD=T1.COD
+INNER JOIN TOTAL_CALLS_PER_CALLER T3 ON T3.COD=T1.COD
+) AS residencia_presumida_validacao2
+where cont_ligacoes_candidatas >= 8 -- at least 8 days of place detection
+  and conta_dias > cont_ligacoes_candidatas / 2; -- at least 50% of detections at the same place
+
+
   
